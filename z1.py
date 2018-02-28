@@ -2,20 +2,21 @@ from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
+import json
 
 
-class SignalType(Enum):
-    SIN = 0
-    SIN_SINGLE = 1
-    SIN_DOUBLE = 2
-    RECT = 3
-    RECT_SIMETRIC = 4
-    TRI = 5
-    STEP = 6
-    UNIT_IMPULSE = 7
-    NOISE_CONT = 8
-    NOISE_GAUSS = 9
-    NOISE_IMPULSE = 10
+class SignalType(str, Enum):
+    SIN = 'sin'
+    SIN_SINGLE = 'sin_single'
+    SIN_DOUBLE = 'sin_double'
+    RECT = 'rect'
+    RECT_SIMETRIC = 'rect_sim'
+    TRI = 'tri'
+    STEP = 'step'
+    UNIT_IMPULSE = 'unit_impulse'
+    NOISE_NORM = 'noise_norm'
+    NOISE_GAUSS = 'noise_gauss'
+    NOISE_IMPULSE = 'noise_impulse'
 
 
 class SignalParams:
@@ -27,6 +28,17 @@ class SignalParams:
         self.duty = duty
         self.step = step
         self.type = sigtype
+
+
+def to_json(params, filename):
+    with open(filename, 'w') as outfile:
+        json.dump(params.__dict__, outfile, indent=2)
+
+
+def from_json(filename):
+    with open(filename, 'r') as infile:
+        js = infile.read()
+        return json.loads(js)
 
 
 def sig_sin(params):
@@ -158,11 +170,46 @@ def sig_div(sig1, sig2):
     return {'x': sig1['x'], 'y': y1}
 
 
-def plot(signal):
+def avg(sig):
+    return np.sum(sig['y']) / len(sig['y'])
+
+
+def avg_abs(sig):
+    y = abs(sig['y'])
+    return np.sum(y / len(sig['y']))
+
+
+def rms(sig):
+    return np.sqrt(avg_pow(sig))
+
+
+def variance(sig):
+    x = avg(sig)
+    return sum((y - x) ** 2 for y in sig['y'])
+
+
+def avg_pow(sig):
+    return sum(y * y for y in sig['y']) / len(sig['y'])
+
+
+def plot_sig(signal):
     plt.plot(signal['x'], signal['y'])
     plt.xlabel('t[s]')
     plt.ylabel('A')
     plt.show()
+
+
+def plot_hist(signal):
+    plt.hist(signal['y'], edgecolor='black', linewidth=1.2)
+    plt.show()
+
+
+def print_stats(sig):
+    print('Average value: ', avg(sig))
+    print('Average absolute value: ', avg_abs(sig))
+    print('Root mean square: ', rms(sig))
+    print('Variance:', variance(sig))
+    print('Average power: ', avg_pow(sig))
 
 
 def main():
@@ -176,7 +223,10 @@ def main():
     p8 = SignalParams(1, 2, 4, 2, 0.0, 0.01, SignalType.UNIT_IMPULSE)
     p9 = SignalParams(1, 12, 10, 4, 0.0, 0.01, SignalType.NOISE_GAUSS)
     p10 = SignalParams(1, 12, 10, 4, 0.01, 0.01, SignalType.NOISE_IMPULSE)
-    p11 = SignalParams(1, 12, 10, 4, 0.0, 0.01, SignalType.NOISE_CONT)
+    p11 = SignalParams(1, 12, 10, 4, 0.0, 0.01, SignalType.NOISE_NORM)
+    to_json(p1, 'b.json')
+    px = from_json('b.json')
+    print(px)
 
     sig1 = sig_sin(p1)
     sig2 = sig_sin_single(p2)
@@ -190,7 +240,9 @@ def main():
     sig10 = noise_impulse(p10)
     sig11 = noise_normal(p11)
 
-    plot(sig6)
+    print_stats(sig1)
+    plot_hist(sig1)
+    plot_sig(sig1)
 
 
 if __name__ == "__main__":
