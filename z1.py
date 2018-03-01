@@ -1,8 +1,10 @@
+import argparse
+import json
+import pickle
 from enum import Enum
 
 import matplotlib.pyplot as plt
 import numpy as np
-import json
 
 
 class SignalType(str, Enum):
@@ -30,15 +32,25 @@ class SignalParams:
         self.type = sigtype
 
 
-def to_json(params, filename):
+def to_json(pyobj, filename):
     with open(filename, 'w') as outfile:
-        json.dump(params.__dict__, outfile, indent=2)
+        json.dump(pyobj.__dict__, outfile, indent=2)
+
+
+def to_bin(pyobj, filename):
+    with open(filename, 'wb') as outfile:
+        pickle.dump(pyobj, outfile)
 
 
 def from_json(filename):
     with open(filename, 'r') as infile:
         js = infile.read()
         return json.loads(js)
+
+
+def from_bin(filename):
+    with open(filename, 'rb') as infile:
+        return pickle.load(infile)
 
 
 def sig_sin(params):
@@ -212,37 +224,78 @@ def print_stats(sig):
     print('Average power: ', avg_pow(sig))
 
 
-def main():
-    p1 = SignalParams(3, 10, 10, 3, 0, 0.01, SignalType.SIN)
-    p2 = SignalParams(3, 10, 10, 3, 0, 0.01, SignalType.SIN_SINGLE)
-    p3 = SignalParams(3, 10, 10, 3, 0, 0.01, SignalType.SIN_DOUBLE)
-    p4 = SignalParams(1, 16, 10, 3, 0.5, 0.01, SignalType.RECT)
-    p5 = SignalParams(1, 16, 10, 3, 0.5, 0.01, SignalType.RECT_SIMETRIC)
-    p6 = SignalParams(1, 12, 10, 4, 0.9, 0.01, SignalType.TRI)
-    p7 = SignalParams(1, 12, 10, 4, 0.5, 0.01, SignalType.STEP)
-    p8 = SignalParams(1, 2, 4, 2, 0.0, 0.01, SignalType.UNIT_IMPULSE)
-    p9 = SignalParams(1, 12, 10, 4, 0.0, 0.01, SignalType.NOISE_GAUSS)
-    p10 = SignalParams(1, 12, 10, 4, 0.01, 0.01, SignalType.NOISE_IMPULSE)
-    p11 = SignalParams(1, 12, 10, 4, 0.0, 0.01, SignalType.NOISE_NORM)
-    to_json(p1, 'b.json')
-    px = from_json('b.json')
-    print(px)
+def read(path):
+    words = path.split('.')
+    ext = words.pop()
+    if ext == 'json':
+        params = from_json(path)
+        return gen_signal(params)
+    elif ext == 'bin':
+        return from_bin(path)
+    else:
+        return from_json(path)
 
-    sig1 = sig_sin(p1)
-    sig2 = sig_sin_single(p2)
-    sig3 = sig_sin_double(p3)
-    sig4 = sig_rect(p4)
-    sig5 = sig_rect(p5)
-    sig6 = sig_tri(p6)
-    sig7 = sig_step(p7)
-    sig8 = sig_impulse(p8)
-    sig9 = noise_gauss(p9)
-    sig10 = noise_impulse(p10)
-    sig11 = noise_normal(p11)
+
+def gen_signal(p):
+    params = SignalParams(p['amplitude'], p['time_start'], p['duration'], p['period'], p['duty'], p['step'], p['type'])
+    if params.type == SignalType.SIN:
+        return sig_sin(params)
+    if params.type == SignalType.SIN_SINGLE:
+        return sig_sin_single(params)
+    if params.type == SignalType.SIN_DOUBLE:
+        return sig_sin_double(params)
+    if params.type == SignalType.RECT:
+        return sig_rect(params)
+    if params.type == SignalType.RECT_SIMETRIC:
+        return sig_rect(params)
+    if params.type == SignalType.TRI:
+        return sig_tri(params)
+    if params.type == SignalType.STEP:
+        return sig_step(params)
+    if params.type == SignalType.UNIT_IMPULSE:
+        return sig_impulse(params)
+    if params.type == SignalType.NOISE_NORM:
+        return noise_normal(params)
+    if params.type == SignalType.NOISE_GAUSS:
+        return noise_gauss(params)
+    if params.type == SignalType.NOISE_IMPULSE:
+        return noise_impulse(params)
+
+
+def sig_op(sig1, sig2, op):
+    if op == '+':
+        return sig_add(sig1, sig2)
+    if op == '-':
+        return sig_sub(sig1, sig2)
+    if op == '*':
+        return sig_mul(sig1, sig2)
+    if op == '/':
+        return sig_div(sig1, sig2)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--read', help='path to json config or saved signal', default='data/p1.json')
+    parser.add_argument('--save', help='path to save signal', default='s.bin')
+    parser.add_argument('--operation', help='operation [+-/*] and path to saved signal', default='*')
+    parser.add_argument('--oppath', help='path to saved signal for operation', default='data/p9.json')
+
+    results = parser.parse_args()
+    readpath = results.read
+    savepath = results.save
+
+    sig1 = read(readpath)
+    if results.operation:
+        op = results.operation
+        oppath = results.oppath
+        sig2 = read(oppath)
+        sig1 = sig_op(sig1, sig2, op)
+    if savepath:
+        to_bin(sig1, savepath)
 
     print_stats(sig1)
-    plot_hist(sig1)
     plot_sig(sig1)
+    plot_hist(sig1)
 
 
 if __name__ == "__main__":
