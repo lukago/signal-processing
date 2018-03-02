@@ -4,6 +4,6 @@
   "duration": 4,
   "period": 2,
   "duty": 0.0,
-  "step": 0.01,
+  "sampfq": 100,
   "type": "unit_impulse"
 }
