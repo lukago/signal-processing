@@ -1,9 +1,9 @@
 {
   "amplitude": 1,
-  "time_start": 12,
+  "time_start": 10,
   "duration": 10,
-  "period": 4,
-  "duty": 0.9,
+  "period": 3,
+  "duty": 0.5,
   "sampfq": 100,
   "type": "tri"
 }

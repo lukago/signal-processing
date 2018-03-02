@@ -1,9 +1,9 @@
 {
-  "amplitude": 4,
+  "amplitude": 3,
   "time_start": 10,
   "duration": 10,
-  "period": 3,
+  "period": 1,
   "duty": 0,
   "sampfq": 100,
-  "type": "sin_double"
+  "type": "sin"
 }

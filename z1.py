@@ -34,9 +34,14 @@ class SignalParams:
 
 
 class Signal:
-    def __init__(self, x=[], y=[]):
-        self.x = x
-        self.y = y
+    def __init__(self, x=None, y=None, params=None):
+        self.x = np.asarray(x)
+        self.y = np.asarray(y)
+        self.params_hist = []
+        if isinstance(params, list):
+            self.params_hist = params
+        else:
+            self.params_hist.append(('root', params))
 
 
 def to_json(pyobj, filename):
@@ -72,22 +77,22 @@ def gen_x(params):
 
 def sig_sin(params):
     x = gen_x(params)
-    y = params.amplitude * np.sin(2 * np.pi / params.period * x)
-    return Signal(x, y)
+    y = params.amplitude * np.sin(2 * np.pi / params.period * (x - params.time_start))
+    return Signal(x, y, params)
 
 
 def sig_sin_single(params):
     x = gen_x(params)
-    y = params.amplitude * np.sin(2 * np.pi / params.period * x)
+    y = params.amplitude * np.sin(2 * np.pi / params.period * (x - params.time_start))
     y[y < 0] = 0
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def sig_sin_double(params):
     x = gen_x(params)
-    y = params.amplitude * np.sin(2 * np.pi / params.period * x)
+    y = params.amplitude * np.sin(2 * np.pi / params.period * (x - params.time_start))
     y = abs(y)
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def sig_tri(params):
@@ -106,7 +111,7 @@ def sig_tri(params):
                 (-params.amplitude * (x[i] - cnt * params.period - params.time_start))
                 / (params.period * (1 - params.duty))
                 + params.amplitude / (1 - params.duty))
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def sig_rect(params):
@@ -120,7 +125,7 @@ def sig_rect(params):
             y.append(params.amplitude)
         else:
             y.append(0) if params.type == SignalType.RECT else y.append(-params.amplitude)
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def sig_step(params):
@@ -133,11 +138,11 @@ def sig_step(params):
             y.append(params.amplitude / 2)
         else:
             y.append(params.amplitude)
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def sig_impulse(params):
-    eps = 0.00001
+    eps = 10E-5
     x = gen_x(params)
     y = []
     for i in range(len(x)):
@@ -145,19 +150,19 @@ def sig_impulse(params):
             y.append(params.amplitude)
         else:
             y.append(0)
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def noise_normal(params):
     x = gen_x(params)
     y = np.random.uniform(-params.amplitude, params.amplitude, len(x))
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def noise_gauss(params):
     x = gen_x(params)
     y = np.random.normal(0, params.amplitude, len(x))
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def noise_impulse(params):
@@ -168,35 +173,38 @@ def noise_impulse(params):
             y.append(params.amplitude)
         else:
             y.append(0)
-    return Signal(x, y)
+    return Signal(x, y, params)
 
 
 def sig_add(sig1, sig2):
-    sig1.y = np.add(sig1.y, sig2.y)
-    return sig1
+    hist = sig1.params_hist
+    hist.append(('+', sig2.params_hist))
+    return Signal(sig1.x, np.add(sig1.y, sig2.y), hist)
 
 
 def sig_sub(sig1, sig2):
-    sig1.y = np.subtract(sig1.y, sig2.y)
-    return sig1
+    hist = sig1.params_hist
+    hist.append(('-', sig2.params_hist))
+    return Signal(sig1.x, np.subtract(sig1.y, sig2.y), hist)
 
 
 def sig_mul(sig1, sig2):
-    sig1.y = np.multiply(sig1.y, sig2.y)
-    return sig1
+    hist = sig1.params_hist
+    hist.append(('*', sig2.params_hist))
+    return Signal(sig1.x, np.multiply(sig1.y, sig2.y), hist)
 
 
 def sig_div(sig1, sig2):
-    eps = 0.00001
-    y1 = sig1.y
-    y2 = sig2.y
-    for i in range(len(y1)):
-        if abs(y2[i]) < eps:
-            y1[i] = np.inf if y1[i] > 0 else -np.inf
+    hist = sig1.params_hist
+    hist.append(('/', sig2.params_hist))
+    eps = 10E-6
+    y = []
+    for i in range(len(sig1.y)):
+        if abs(sig2.y[i]) < eps:
+            y.append(np.inf)
         else:
-            y1[i] /= y2[i]
-
-    return Signal(sig1.x, y1)
+            y.append(sig1.y[i] / sig2.y[i])
+    return Signal(sig1.x, y, hist)
 
 
 def avg(sig):
@@ -214,7 +222,7 @@ def rms(sig):
 
 def variance(sig):
     x = avg(sig)
-    return sum((y - x) ** 2 for y in sig.y)
+    return sum((y - x) ** 2 for y in sig.y) / len(sig.y)
 
 
 def avg_pow(sig):
@@ -228,17 +236,22 @@ def plot_sig(sig):
     plt.show()
 
 
-def plot_hist(sig):
-    plt.hist(sig.y, edgecolor='black', linewidth=1.2)
+def plot_hist(sig, binnum):
+    sig = trunc(sig)
+    if np.inf in sig.y:
+        return
+    plt.hist(sig.y, bins=binnum, edgecolor='black', linewidth=1.2)
     plt.show()
 
 
 def print_stats(sig):
-    print('Average value: ', avg(sig))
-    print('Average absolute value: ', avg_abs(sig))
-    print('Root mean square: ', rms(sig))
-    print('Variance:', variance(sig))
-    print('Average power: ', avg_pow(sig))
+    sig = trunc(sig)
+    noinf = np.inf not in sig.y
+    print('Average value: ', avg(sig) if noinf else '+-inf')
+    print('Average absolute value: ', avg_abs(sig) if noinf else '+-inf')
+    print('Root mean square: ', rms(sig) if noinf else '+-inf')
+    print('Variance:', variance(sig) if noinf else '+-inf')
+    print('Average power: ', avg_pow(sig) if noinf else '+-inf')
 
 
 def read(path):
@@ -247,10 +260,8 @@ def read(path):
     if ext == 'json':
         params = from_json(path)
         return gen_signal(params)
-    elif ext == 'bin':
-        return from_bin(path)
     else:
-        return from_json(path)
+        return from_bin(path)
 
 
 def gen_signal(p):
@@ -291,18 +302,31 @@ def sig_op(sig1, sig2, op):
         return sig_div(sig1, sig2)
 
 
+def trunc(sig):
+    if len(sig.params_hist) == 1:
+        p = sig.params_hist[0][1]
+        if p.duration > p.period:
+            x = np.arange(p.time_start, p.period + p.time_start, 1 / p.sampfq)
+            y = sig.y[:len(x)]
+            return Signal(x, y, sig.params_hist)
+    else:
+        return sig
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--read', help='path to json config or saved signal', default='data/p1.json')
-    parser.add_argument('--save', help='path to save signal', default='s.bin')
+    parser.add_argument('--save', help='path to save signal', default='s0.bin')
     parser.add_argument('--savetxt', help='path to save signal in txt', default='s.txt')
-    parser.add_argument('--operation', help='operation [+-/*] and path to saved signal')
+    parser.add_argument('--bins', help='number of bins for histogram', default=10)
+    parser.add_argument('--operation', help='optional operation [+-/*] with signals')
     parser.add_argument('--oppath', help='path to saved signal for operation')
 
     results = parser.parse_args()
     readpath = results.read
     savepath = results.save
     savetxtpath = results.savetxt
+    bins = results.bins
 
     sig1 = read(readpath)
     if results.operation:
@@ -317,7 +341,7 @@ def main():
 
     print_stats(sig1)
     plot_sig(sig1)
-    plot_hist(sig1)
+    plot_hist(sig1, bins)
 
 
 if __name__ == "__main__":
