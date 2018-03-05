@@ -229,21 +229,6 @@ def avg_pow(sig):
     return sum(y * y for y in sig.y) / len(sig.y)
 
 
-def plot_sig(sig):
-    plt.plot(sig.x, sig.y)
-    plt.xlabel('t[s]')
-    plt.ylabel('A')
-    plt.show()
-
-
-def plot_hist(sig, binnum):
-    sig = trunc(sig)
-    if np.inf in sig.y:
-        return
-    plt.hist(sig.y, bins=binnum, edgecolor='black', linewidth=1.2)
-    plt.show()
-
-
 def print_stats(sig):
     sig = trunc(sig)
     noinf = np.inf not in sig.y
@@ -313,6 +298,51 @@ def trunc(sig):
         return sig
 
 
+def sample(sig, fq):
+    x = []
+    y = []
+    prev_fq = len(sig.x) / (sig.x[-1] - sig.x[0])
+    step = int(prev_fq // fq)
+    for i in range(0, len(sig.x), step):
+        x.append(sig.x[i])
+        y.append(sig.y[i])
+    return Signal(x, y, sig.params_hist)
+
+
+def quant(sig, levels):
+    old_min = min(sig.y)
+    old_max = max(sig.y)
+    old_range = np.abs(old_max - old_min)
+    step = old_range / levels
+    bins = np.arange(old_min, old_max, step)
+    y = []
+
+    for i in range(len(sig.y)):
+        best_match = (bins[0], (abs(bins[0]) - sig.y[i]))
+        for m in range(len(bins)):
+            dist = abs(bins[m] - sig.y[i])
+            if dist < best_match[1]:
+                best_match = (bins[m], dist)
+        y.append(best_match[0])
+
+    return Signal(sig.x, y, sig.params_hist)
+
+
+def plot_sig(sig):
+    plt.plot(sig.x, sig.y, marker='o')
+    plt.xlabel('t[s]')
+    plt.ylabel('A')
+    plt.show()
+
+
+def plot_hist(sig, binnum):
+    sig = trunc(sig)
+    if np.inf in sig.y:
+        return
+    plt.hist(sig.y, bins=binnum, edgecolor='black', linewidth=1.2)
+    plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--read', help='path to json config or saved signal', default='data/p1.json')
@@ -341,7 +371,10 @@ def main():
 
     print_stats(sig1)
     plot_sig(sig1)
-    plot_hist(sig1, bins)
+    sig2 = sample(sig1, 5)
+    plot_sig(sig2)
+    sig2 = quant(sig2, 5)
+    plot_sig(sig2)
 
 
 if __name__ == "__main__":
