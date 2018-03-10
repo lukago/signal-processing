@@ -4,6 +4,6 @@
   "duration": 10,
   "period": 3,
   "duty": 0,
-  "sampfq": 1000,
+  "sampfq": 100,
   "type": "sin"
 }
