@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import pickle
 from enum import Enum
@@ -23,7 +24,7 @@ class SignalType(str, Enum):
 
 class SignalParams:
     def __init__(self, amplitude=0.0, time_start=0.0, duration=0.0,
-                 peroid=0.0, duty=0.0, sampfq=0.0, sigtype=None):
+                 peroid=0.0, duty=0.0, sampfq=0.0, sigtype=None, offset=False):
         self.amplitude = amplitude
         self.time_start = time_start
         self.duration = duration
@@ -31,6 +32,7 @@ class SignalParams:
         self.duty = duty
         self.sampfq = sampfq
         self.type = sigtype
+        self.offset = offset
 
 
 class Signal:
@@ -77,7 +79,11 @@ def gen_x(params):
 
 def sig_sin(params):
     x = gen_x(params)
-    y = params.amplitude * np.sin(2 * np.pi / params.period * (x - params.time_start))
+    if params.offset:
+        x = np.arange(0, params.duration, 1 / params.sampfq)
+        y = params.amplitude * np.sin(2 * np.pi / params.period * (x + params.time_start))
+    else:
+        y = params.amplitude * np.sin(2 * np.pi / params.period * (x - params.time_start))
     return Signal(x, y, params)
 
 
@@ -286,6 +292,10 @@ def read(path):
 def gen_signal(p):
     params = SignalParams(p['amplitude'], p['time_start'], p['duration'],
                           p['period'], p['duty'], p['sampfq'], p['type'])
+    return gen_signal_from_params(params)
+
+
+def gen_signal_from_params(params):
     if params.type == SignalType.SIN:
         return sig_sin(params)
     if params.type == SignalType.SIN_SINGLE:
@@ -367,12 +377,22 @@ def dequant_sinc(sig, new_fq):
 
 
 def plot_sig(sig, title='', show=True):
-    plt.plot(sig.x, sig.y, marker='.')
+    plt.plot(sig.x, sig.y)
     plt.xlabel('t[s]')
     plt.ylabel('A')
     plt.title(title)
+    plt.xlim(0, sig.params_hist[0][1].duration)
     if show:
         plt.show()
+
+
+def plot_sig_lim(sig, title='', lim=10):
+    plt.plot(sig.x, sig.y)
+    plt.xlabel('t[s]')
+    plt.ylabel('A')
+    plt.title(title)
+    plt.xlim(0, lim)
+    plt.show()
 
 
 def plot_quant_signals(sig1, sig2, sig3, sig4):
@@ -394,6 +414,133 @@ def plot_hist(sig, binnum):
         return
     plt.hist(sig.y, bins=binnum, edgecolor='black', linewidth=1.2)
     plt.show()
+
+
+# ##################################################################
+# ZAD 3
+# ##################################################################
+
+
+def convultion(sig1, sig2):
+    params1 = sig1.params_hist[0][1]
+    params2 = sig2.params_hist[0][1]
+    length = len(sig1.x) + len(sig2.x) - 1
+    x = np.arange(0, length * 1 / params1.sampfq, 1 / params1.sampfq)
+    y = []
+
+    for n in range(length):
+        s = 0
+        for k in range(len(sig1.y)):
+            if 0 <= (n - k) < len(sig2.y):
+                s += sig1.y[k] * sig2.y[n - k]
+        y.append(s)
+
+    params = copy.deepcopy(params1)
+    params.duration = params1.duration + params2.duration
+    return Signal(x, y, params)
+
+
+def corelation(sig1, sig2):
+    params1 = sig1.params_hist[0][1]
+    params2 = sig2.params_hist[0][1]
+    length = len(sig1.x) + len(sig2.x) - 1
+    x = np.arange(0, length * 1 / params1.sampfq, 1 / params1.sampfq)
+    y = []
+
+    for n in range(-(len(sig2.x)), length - len(sig2.x), 1):
+        s = 0
+        for k in range(len(sig1.y)):
+            if 0 <= (k - n) < len(sig2.y):
+                s += sig1.y[k] * sig2.y[k - n]
+        y.append(s)
+
+    params = copy.deepcopy(params1)
+    params.duration = params1.duration + params2.duration
+    return Signal(x, y, params)
+
+
+def impulse_ans(n, m, k):
+    if n == (m - 1) / 2:
+        return 2 / k
+    else:
+        return np.sin((2 * np.pi * (n - (m - 1) / 2)) / k) / (np.pi * (n - (m - 1) / 2))
+
+
+def window_hanning(y, m):
+    for i in range(len(y)):
+        y[i] *= 0.5 - 0.5 * np.cos(2 * np.pi * i / m)
+    return y
+
+
+def window_rect(y, m):
+    for i in range(len(y)):
+        if (m - 1) / 2 < i < -(m - 1) / 2:
+            y[i] = 0
+    return y
+
+
+def mid_filter(y):
+    for i in range(len(y)):
+        y[i] *= 2 * np.sin(np.pi * i / 2)
+    return y
+
+
+def gen_filter(n, m, fp, fo, rect=False, mid=False):
+    k = fp / fo
+    x = np.arange(0, 1 / fp * n, 1 / fp)
+    y = []
+
+    for i in range(n):
+        y.append(impulse_ans(i, m, k))
+
+    if mid:
+        y = mid_filter(y)
+
+    if rect:
+        y = window_rect(y, m)
+    else:
+        y = window_hanning(y, m)
+
+    return Signal(x, y, SignalParams(0, 0, 1 / fp * n, 0, 0, fp, None))
+
+
+def reflect_sig(sig, v, s):
+    t = s / v
+    params = sig.params_hist[0][1]
+    params_new = copy.deepcopy(params)
+    params_new.offset = True
+    params_new.time_start = t
+    return gen_signal_from_params(params_new)
+
+
+def calc_dist(sig, v, s):
+    sig_ref = reflect_sig(sig, v, s)
+
+    # korelacja przez splot:
+    # sig_ref2 = copy.deepcopy(sig_ref)
+    # sig_ref2.y = sig_ref2.y[::-1]
+    # cor = convultion(sig, sig_ref2)
+
+    cor = corelation(sig, sig_ref)
+
+    # find max
+    max_x = 0
+    max_y = 0
+    for i in range(len(cor.x)//2, len(cor.x), 1):
+        if cor.y[i] > max_y:
+            max_y = cor.y[i]
+            max_x = cor.x[i]
+
+    dt = max_x - cor.x[len(cor.x)//2]
+    dist = v * dt
+    ddist = abs(dist - s)
+
+    print("Calulated dist:", dist)
+    print("Delta dist:", ddist)
+
+    plot_sig(sig)
+    plot_sig(sig_ref)
+    plot_sig(cor)
 
 
 def main():
@@ -442,5 +589,50 @@ def main():
     plot_hist(sig1, bins)
 
 
+def conv_test():
+    # splot
+    params1 = SignalParams(3, 0, 5, 1, 0, 100, SignalType.SIN)
+    params2 = SignalParams(3, 0, 10, 3, 0, 100, SignalType.SIN)
+    # sig1 = Signal([0, 1, 2, 3], [1, 2, 3, 4], SignalParams(duration=4, time_start=0))
+    # sig2 = Signal([0, 1, 2], [5, 6, 7], SignalParams(duration=4, time_start=0))
+    sig1 = gen_signal_from_params(params1)
+    sig2 = gen_signal_from_params(params2)
+    sig3 = convultion(sig1, sig2)
+    plot_sig(sig3, 'convultion')
+
+
+def filter_test():
+    fil = gen_filter(800, 7, 200, 20, rect=True, mid=True)
+
+    params1 = SignalParams(2, 0, 4, 1, 0, 200, SignalType.SIN)
+    params2 = SignalParams(0.1, 0, 4, 1, 0, 200, SignalType.NOISE_GAUSS)
+    sig1 = gen_signal_from_params(params1)
+    sig2 = gen_signal_from_params(params2)
+
+    sig_noised = sig_add(sig1, sig2)
+    sig_filtered = convultion(sig_noised, fil)
+
+    plot_sig(fil, 'filter')
+    plot_sig(sig_noised, 'sig_noised')
+    plot_sig_lim(sig_filtered, 'filtered signal', sig_noised.params_hist[0][1].duration)
+
+
+def cor_test():
+    # params1 = SignalParams(3, 0, 5, 1, 0, 100, SignalType.SIN)
+    # params2 = SignalParams(3, 0, 10, 3, 0, 100, SignalType.SIN)
+    sig1 = Signal([0, 1, 2, 3], [1, 2, 3, 4], SignalParams(duration=4, time_start=0, sampfq=1))
+    sig2 = Signal([0, 1, 2], [5, 6, 7], SignalParams(duration=4, time_start=0, sampfq=1))
+    # sig1 = gen_signal_from_params(params1)
+    # sig2 = gen_signal_from_params(params2)
+    sig3 = corelation(sig1, sig2)
+    plot_sig(sig3, 'corelation')
+
+
+def dist_test():
+    params = SignalParams(2, 0, 4, 1, 0, 200, SignalType.SIN, False)
+    sig = gen_signal_from_params(params)
+    calc_dist(sig, 100, 50)
+
+
 if __name__ == "__main__":
-    main()
+    dist_test()
