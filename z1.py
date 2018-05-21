@@ -382,17 +382,24 @@ def plot_sig(sig, title='', show=True):
     plt.ylabel('A')
     plt.title(title)
     plt.xlim(0, sig.params_hist[0][1].duration)
+    plt.savefig('img/' + title + '.png')
     if show:
         plt.show()
+    plt.cla()
+    plt.clf()
 
 
-def plot_sig_lim(sig, title='', lim=10):
+def plot_sig_lim(sig, title='', lim=10, show=True):
     plt.plot(sig.x, sig.y)
     plt.xlabel('t[s]')
     plt.ylabel('A')
     plt.title(title)
     plt.xlim(0, lim)
-    plt.show()
+    plt.savefig(title + '.png')
+    if show:
+        plt.show()
+    plt.cla()
+    plt.clf()
 
 
 def plot_quant_signals(sig1, sig2, sig3, sig4):
@@ -538,9 +545,9 @@ def calc_dist(sig, v, s):
     print("Calulated dist:", dist)
     print("Delta dist:", ddist)
 
-    plot_sig(sig)
-    plot_sig(sig_ref)
-    plot_sig(cor)
+    plot_sig(sig, 'sent_sig', False)
+    plot_sig(sig_ref, 'reflect_sig', False)
+    plot_sig(cor, 'correlated_sig', False)
 
 
 def main():
@@ -598,7 +605,7 @@ def conv_test():
     sig1 = gen_signal_from_params(params1)
     sig2 = gen_signal_from_params(params2)
     sig3 = convultion(sig1, sig2)
-    plot_sig(sig3, 'convultion')
+    plot_sig(sig3, 'convultion', False)
 
 
 def filter_test():
@@ -612,9 +619,9 @@ def filter_test():
     sig_noised = sig_add(sig1, sig2)
     sig_filtered = convultion(sig_noised, fil)
 
-    plot_sig(fil, 'filter')
-    plot_sig(sig_noised, 'sig_noised')
-    plot_sig_lim(sig_filtered, 'filtered signal', sig_noised.params_hist[0][1].duration)
+    plot_sig(fil, 'filter', False)
+    plot_sig(sig_noised, 'sig_noised', False)
+    plot_sig_lim(sig_filtered, 'filtered_signal', sig_noised.params_hist[0][1].duration, False)
 
 
 def cor_test():
